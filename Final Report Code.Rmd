@@ -435,20 +435,24 @@ Overall, we found the PCA to be helpful in identifying topics. The results are r
 
 # Sentiment Analysis
 
+In order to do the sentiment analysis, first we create a tibble as base document for both afinn and bing lexicons
+
 ```{r creating tibble as a basis for sentiment analysis}
 sentimentdata <- cSplit(txtx_split_merged3, "text", sep = " ", direction = "long")
 sentimenttibble <- as.data.frame(sentimentdata)
 ```
-
+We changed the token variable name to "word" to allow the inner_join() function 
 
 ```{r changing the "text" column into "word" to be later used as a join variable for sentiment analysis}
 names(sentimenttibble) <- c("ID","Title", "WordCount", "Day", "Year_Month", "Year", "Medium", "word")
 ```
+We then applied the bing sentiment
 
 ```{r applying "bing" library as the sentiment measure}
 sentimentbing <- sentimenttibble %>%
 inner_join(get_sentiments("bing"))
 ```
+Aggregating the result in each article and then accumulate it monthly and yearly
 
 ```{r counting and aggregating the bing sentiment count for each article}
 sentimentbingc <- sentimentbing %>% count(ID, Title, WordCount, Day, Year_Month, Year, Medium, word, sentiment, sort = FALSE)
@@ -459,17 +463,20 @@ bing <- as.data.frame(aggregate(value~Title+WordCount+Day+Year_Month+Year+Medium
 bing2 <- as.data.frame(aggregate(value~Year_Month+Medium, bing, sum))
 bing3 <- as.data.frame(aggregate(value~Year+Medium, bing, sum))
 ```
+We did the same thing for afinn lexicon
 
 ```{r applying "afinn" library as the sentiment measure}
 afinn <- sentimenttibble %>%
 inner_join(get_sentiments("afinn"))
 ```
+Aggregating
 
 ```{r aggregating the afinn sentiment count for each article}
 afinn <- as.data.frame((aggregate(value~Title+WordCount+Day+Year_Month+Year+Medium, afinn, sum)))
 afinn2 <- as.data.frame(aggregate(value~Year_Month+Medium, afinn, sum))
 afinn3 <- as.data.frame(aggregate(value~Year+Medium, afinn, sum))
 ```
+We then visualized the result by plotting two stacked bar charts for yearly and monthly data 
 
 ```{r plotting the bing sentiment}
 #Yearly
@@ -478,7 +485,7 @@ dat2 <- subset(bing3, value <0)
 ggplot() + 
     geom_bar(data = dat1, aes(x=Year, y=value, fill=Medium),stat = "identity") +
     geom_bar(data = dat2, aes(x=Year, y=value, fill=Medium),stat = "identity") +
-    scale_fill_hue ()
+    scale_fill_hue () +
     theme_bw() +
     theme(panel.border = element_blank())
 
@@ -492,6 +499,7 @@ ggplot() +
     theme_bw() +
     theme(panel.border = element_blank())
 ```
+Same visualizing technique for afinn lexicon
 
 ```{r plotting the afinn sentimet}
 #Yearly
