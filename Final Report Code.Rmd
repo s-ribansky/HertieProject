@@ -1,0 +1,758 @@
+---
+title: "Final Report"
+author: "Samuel, Nikki, Dario"
+date: "17/11/2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+# Preparation
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Set Working Directory: setwd("/Users/dario.siegen/Downloads")
+Packages used for this analysis:
+
+```{r libraries, message = FALSE}
+library(tidyverse)
+library(tidytext)
+library(psych)
+library(ggplot2)
+library(devtools)
+library(readtext)
+library(quanteda)
+library(quanteda.corpora)
+library(tm)
+library(SnowballC)
+library(dplyr)
+library(tidyr)
+library(REdaS)
+library(caret)
+library(stm)
+library(ggplot2)#
+library(zoo)
+library(splitstackshape)
+```
+
+# Data Import
+
+First, we imported the entire set of documents (5713 single media articles as ".txt" files) from working directory.
+ 
+```{r data import}
+
+textx <- readtext("training set/*",
+                  docvarsfrom = "filenames",
+                  dvsep="-")
+```
+
+Because every .txt file contained the document variables in rows and not in columns or nodes (as opposed to a regularly structured document), we pre-processed the data to enable the proper labelling and subsequent treatment thereof. 
+
+```{r meta data prep, echo = FALSE}
+txtx_split <- str_split(textx$text, "\n", simplify = TRUE)
+txtx_split_merged <- as.data.frame(txtx_split) %>% unite(text, 
+                                                         c(V10:ncol(txtx_split)), 
+                                                         sep = " ", remove = FALSE)
+txtx_split_merged[11:ncol(txtx_split_merged)] <- list(NULL)
+colnames(txtx_split_merged) <- c("title", "author", "length", "date", "time", 
+                                 "medium", "source", "language", "source2", "text")
+txtx_split_merged2 <- separate(txtx_split_merged, c(date), c("day","month","year"),
+                               sep = " ", remove = TRUE)
+txtx_split_merged2 <- separate(txtx_split_merged2, c(length),
+                               c("wordcount","words"),
+                               sep = " ", remove = TRUE)
+txtx_split_merged2$wordcount <- as.numeric(txtx_split_merged2$wordcount)
+txtx_split_merged2$title <- as.character(txtx_split_merged2$title)
+# clean medium variable
+
+txtx_split_merged2$medium <- gsub("The Guardian", "guardian",
+                                  txtx_split_merged2$medium, ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("STEL", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("DT", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("DAIM", "mail", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("TIMEUK", "times", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("GRDN", "guardian", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("IND", "independent", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("thetimes.co.uk", "times",
+                                  txtx_split_merged2$medium, ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("The Telegraph Online", "telegraph",
+                                  txtx_split_merged2$medium, ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("sundaytimes.co.uk", "times",
+                                  txtx_split_merged2$medium, ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("BBCSUP", "BBC", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("THEEXP", "express", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("THESUN", "sun", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("ST", "times", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("TELEM", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("SEVENT", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("TELUK", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("DAITEL", "telegraph", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("Telegraph.co.uk", "telegraph",
+                                  txtx_split_merged2$medium, ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("T", "times", txtx_split_merged2$medium,
+                                  ignore.case = FALSE)
+txtx_split_merged2$medium <- gsub("times", "The Times", txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("telegraph", "The Telegraph",
+                                  txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("guardian", "The Guardian",
+                                  txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("mail", "Daily Mail", txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("express", "Daily Express",
+                                  txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("sun", "The Sun", txtx_split_merged2$medium)
+txtx_split_merged2$medium <- gsub("independent", "The Independent",
+                                  txtx_split_merged2$medium)
+
+# create ID
+
+txtx_split_merged2 <- unite(txtx_split_merged2, "id", c(year, medium, title),
+                            sep = "_", remove = FALSE)
+
+# clean date variable
+
+txtx_split_merged2$month <- gsub("January", "01", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("February", "02", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("March", "03", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("April", "04", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("May", "05", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("June", "06", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("July", "07", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("August", "08", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("September", "09", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("October", "10", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("November", "11", txtx_split_merged2$month)
+txtx_split_merged2$month <- gsub("December", "12", txtx_split_merged2$month)
+
+txtx_split_merged2 <- unite(txtx_split_merged2, "date", c(year, month, day),
+                            sep = "/", remove = FALSE)
+txtx_split_merged2$date <- as.POSIXct(txtx_split_merged2$date, format = "%Y/%m/%d")
+txtx_split_merged2$date <- as.numeric(txtx_split_merged2$date)
+txtx_split_merged2 <- unite(txtx_split_merged2, "year_month", c(year, month),
+                            sep = "-", remove = FALSE)
+txtx_split_merged2$year <- as.numeric(txtx_split_merged2$year)
+
+# drop NAs and useless variables
+
+txtx_split_omit <- txtx_split_merged2
+
+txtx_split_merged2 <- na.omit(txtx_split_merged2)
+txtx_split_merged2$month <- NULL
+txtx_split_merged2$author <- NULL
+txtx_split_merged2$day <- NULL
+txtx_split_merged2$words <- NULL
+txtx_split_merged2$time <- NULL
+txtx_split_merged2$language <- NULL
+txtx_split_merged2$source <- NULL
+txtx_split_merged2$source2 <- NULL
+txtx_split_omit <- txtx_split_omit[!txtx_split_omit$id %in% txtx_split_merged2$id,]
+names(txtx_split_merged2)
+```
+
+392 out of the 5713 articles dropped out because of bad metadata quality. To check which articles got dropped in the process, we created a data.frame of the lost cases and had a closer look at them. They were not omitted systematically in terms of year or medium. Many of them were BBC articles, which we had decided to exclude from the analysis (focusing on newspaper articles).
+
+The result was a data frame of 5321 articles with 6 variables: 
+id (character)
+title (character)
+wordcount (numeric)
+date (Date)
+year_month (character)
+year (numeric)
+medium (character)
+text (character)
+
+# Frequency Barplot
+
+At this point, we could create a bar plot that shows the number of articles over time for each month:
+
+```{r create barplot}
+counts <- table(txtx_split_merged2$medium, txtx_split_merged2$year_month)
+barplot(counts, main="UK Climate Change Coverage",
+        xlab="Time", ylab = "Articles", col = 1:7)
+legend("topleft", 
+       legend = c(rownames(counts)), 
+       fill = 1:7, ncol = 2,
+       cex = 0.8)
+```
+
+# Data Treatment
+
+Amid the initial low quality, we proceeded to further manually process the data to have a usable dfm.
+
+```{r clean text data}
+txtx_split_merged3 <- txtx_split_merged2
+
+### remove noise
+
+txtx_split_merged3$text <- gsub("(\\[.*?\\])", "", txtx_split_merged3$text, 
+                                ignore.case = T)
+txtx_split_merged3$text <- gsub("Document.*", "",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("www.telegraph.co.uk#upd", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("ref_src", "", txtx_split_merged3$text,
+                                ignore.case = T)
+txtx_split_merged3$text <- gsub("www.telegraph.co.uk", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("\\d", " ", txtx_split_merged3$text,
+                                ignore.case = T)
+txtx_split_merged3$text <- gsub("Times Newspapers Limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Daily Mail Associated Newspapers Limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Copyright", "", txtx_split_merged3$text,
+                                ignore.case = T)
+txtx_split_merged3$text <- gsub("All rights reserved", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("The Guardian Newspaper Limited", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("The Guardian Newspaper", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("GMT", "",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("The Guardian", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Independent Print Ltd", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("pic.twitter.com", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("twitter.com", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("https", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("http", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("etfw", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("t.co", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("twsrc", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("src=", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("BST", "",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("html", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub(" pm ", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("hashtag", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("hash", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("block-time", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("updated-timeUpdated", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("published-time", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("co.uk", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("status", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Guardian Newspapers limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("News United Kingdom Ireland limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("News Group Newspapers", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Independent Digital News and Media Ltd.", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("The Daily Telegraph", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("Telegraph Media Group Ltd", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("The Sunday Telegraph", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("News UK Ireland Limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("News United Kingdom & Ireland Limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("News UK & Ireland Limited", "",
+                                txtx_split_merged3$text, ignore.case = T)
+
+### recover Abbreviations
+
+txtx_split_merged3$text <- gsub("\\bUK\\b", "United Kingdom",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("\\bUS\\b", "United States",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("\\bUN\\b", "United Nations",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("\\bEU\\b", "European Union",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("\\bBP\\b", "British Petroleum",
+                                txtx_split_merged3$text, ignore.case = F)
+txtx_split_merged3$text <- gsub("\\bBPs\\b", "British Petroleum",
+                                txtx_split_merged3$text, ignore.case = F)
+
+### remove months (except May because of Theresa May)
+
+txtx_split_merged3$text <- gsub("January", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("February", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("March", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("April", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("June", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("July", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("August", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("September", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("October", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("November", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+txtx_split_merged3$text <- gsub("December", " ",
+                                txtx_split_merged3$text, ignore.case = T)
+```
+
+# Corpus creation
+
+Next, we created a data corpus:
+
+```{r corpus}
+txt_corpus <- corpus(txtx_split_merged3, docid_field = "id", text_field = "text")
+corpus_training <- txt_corpus
+
+```
+
+# Tokeninizing
+
+In the next step, we created token vars that we would use for the first part of our analysis, the principal component analysis (PCA). In that process, in line with Greussing and Boomgaarden (2017), we removed numbers, punctuation, hyphens and stopwords. Furthermore, we lower-cased all letters.
+
+```{r tokens}
+toks <- tokens(txt_corpus, what="word", remove_numbers=TRUE,
+               remove_punct=TRUE, remove_hyphens=TRUE,
+               include_docvars = TRUE)
+toks <- tokens(toks) %>% 
+    tokens_remove(stopwords('en'), padding = TRUE)
+
+toks <- tokens(toks) %>% tokens_select(min_nchar = 2)
+```
+
+# Collocations
+
+By looking at the data more closely, we identified certain critical collocations. The exact procedure can be found in the annex.
+
+We then listed the identified collocations and saves this list as the value frame "collocations":
+
+```{r list identified collocations}
+collocations <- c(
+  "climate change sceptic*", "climate change agreement*", "emission* trad*", "carbon tax", "carbon target*", "pric* carbon", "net zero carbon", "zero carbon", "low carbon", "carbon reduction", "carbon footprint", "emission* standard*", "carbon dioxide emission*", "emission* target*","emission* reduction*", "tackle emission*", "global emission*", "greenhouse gas emission*", "co emission*", "Prime minister may*", "prime minister johnson*", "climate talk*", "climate conference", "climate issue*", "climate goal*", "renewable energ*", "green energy", "clean energ*", "energy efficien*", "prime minister cameron*", "Lib Dems", "fall* emission*", "Strike Climate", "Sadiq Khan*", "president obama*", "New Zealand", "saudi arabia", "Intergovernmental Panel Climate Change*", "energy saving", "saving energy", "nuclear energy", "climate protection", "climate resilience",  "united nations*", "general assembly", "green new deal", "greenhouse gas", "paris climate agreement", "paris agreement", "climate agreement*", "green growth", "climate action", "climate risk*", "fossil fuel compan*", "energy compan*", "climate denier*", "climate change*", "recep tayyip erdogan*", "climate negotiation*", "fossil fuel*", "climate finance", "climate impact*", "great barrier reef", "paris agreement*", "european union*", "climate catastrophe",  "prime minister*", "net zero", "carbon emissions", "young people*", "human caused", "climate threat", "energy mix", "energy intensiv*", "energy security", "climate refugee*", "climate movement*", "pre industrial", "climate crisis", "climate breakdown", "carbon capture storage", "carbon capture", "global warming", "green industrial revolution", "greta thunberg*", "climate fund", "new york", "david attenborough*", "carbon dioxide", "extreme weather events", "supreme court", "Theresa May*", "David Cameron*", "Jeremy Corbyn*", "Bank England", "House Commons", "Donald Trump*", "Boris Johnson*", "Philip Hammond", "Ed Miliband", "Tom Watson", "Extinction Rebellion*", "North Sea", "Downing Street", "Washington Post", "Fridays Future", "Climate Strike*", "Kim Darroch*", "Conservative Party*", "Dominic Grieve*", "Tony Blair*", "Steve Barclay*", "South Africa*", "Labour Party*", "labour government", "Scott Morrison*", "Climate Action", "San Francisco", "BBC Radio", "British Petroleum", "pride london", "Jeremy Hunt", "Northern Ireland", "Mrs Thatcher", "John McDonnell", "president trump", "Liberal Democrats", "Friends Earth", "White House", "El Niño", "United Kingdom*", "Miami Beach", "United States*", "World Bank", "Mrs May*", "Mr Johnson*", "George Osborne*", "Mr Trump*", "climate emergency", "climate justice", "climate activist*", "climate science", "climate scientist*", "climate summit", "climate protest*", "climate polic*", "climate sceptic", "climate model*", "climate deal", "climate chaos", "climate solutions", "cut* emission*", "reduc* emission*", "zero emission*", "ecological emergency", "climate sceptic*")
+```
+
+Then we compounded the identified collocations in the token list:
+
+```{r compound collocations}
+toks_comp <- tokens_compound(toks, pattern = phrase(collocations), case_insensitive = TRUE)
+```
+
+# Most Frequent Tokens
+
+For the PCA, in line with Greussing and Boomgaarden (2017), we identified the 500 most frequent tokens.
+However, because this is a training set, we have not yet fully treated them. This explains the bug-tokens such as "get" or "pic.twitter.com". That step will be fully executed after having further explored the bugs within the individual ".txt" documents.
+
+```{r frequent tokens}
+tok_dfm <- dfm(toks_comp, tolower = TRUE)
+tok_dfm <- dfm_trim(tok_dfm, tolower = FALSE, min_docfreq = 10, docfreq_type = 
+                      c("count"))
+textstat <- textstat_frequency(tok_dfm)
+textstat
+```
+
+To identify the most frequent terms, we order tokens using the function "textstat_frequency"
+
+# Weighted Frequency 
+
+For the PCA analysis, we selected certain relevant tokens and applied the tf-idf function to calculate their "importance" score.
+
+```{r weighted frequency}
+tok_tfidf <- dfm_tfidf(tok_dfm)
+textstat_weight <- textstat_frequency(tok_tfidf, force = TRUE)
+textstat_weight
+```
+
+# Principal Component Analysis (PCA)
+
+We then applied the principal() function from the "psych" package to test for the presence of latent variables. In doing so, we defined the number of frames as 7 (RCA1 to RC7). The selection of tokens used in this PCA we derived from the list of frqequent tokens and collocations. The results were very good (see final report). For a publication in a journal, however, we'd have to be able to explain our selection of tokens more systematically.
+
+```{r final selection}
+final_select <- c("fossil_fuel_compan*", "climate_breakdown", "united_nations", "	fossil_fuel", "renewable_energy", "net_zero", "new_york", "climate_emergency", "extinction_rebellion*", "climate_strike", "greta_thunberg", "low_carbon", "clean energy", "climate_scienc*", "young_people", "climate_scientists", "energy_efficiency", "zero_carbon", "climate_summit", "climate_change_agreement", "green_new_deal", "intergovernmental_panel_climate_change", "scientific", "science", "research", "expert", "energy_companies", "human_caused", "climate_sceptic*", "climate_deal", "general_assembly", "carbon_capture_storage", "climate_deni*", "price_carbon", "climate_negotiations", "paris_climate_agreement", "climate_risk", "climate_talks")
+
+toks_anal <- tokens_select(toks_comp, pattern = phrase(final_select), 
+                           selection = c("keep"), case_insensitive = TRUE, padding = FALSE, window = 0, verbose = TRUE)
+```
+
+Then, we transformed the token list for the final selection into a data frame and checked for the individual token frequency::
+
+```{r final selection frequent tokens}
+tok_anal_dfm <- dfm(toks_anal, tolower = TRUE)
+tok_anal_dfm <- dfm_trim(tok_anal_dfm, tolower = FALSE, min_docfreq = 1, 
+                         docfreq_type = c("count"))
+textstat_anal <- textstat_frequency(tok_anal_dfm)
+textstat_anal
+```
+
+Again, we applied the tf-idf score:
+
+```{r weighted final selection}
+tok_anal_tfidf <- dfm_tfidf(tok_anal_dfm)
+textstat_weight_anal <- textstat_frequency(tok_anal_tfidf, force = TRUE)
+textstat_weight_anal
+```
+
+And then applied the principal() function to see identify frames ("nfactors" defines the number of expected frames):
+
+```{r PCA final selection}
+PCA <- principal(as.matrix(tok_anal_tfidf), nfactors=7, rotate="varimax")
+PCA
+```
+
+Overall, we found the PCA to be helpful in identifying topics. The results are rather solid, as the topics make sense intuitively. However, to reach even better results, we also applied sentiment analysis as well as topic modelling.
+
+# Sentiment Analysis
+
+```{r creating tibble as a basis for sentiment analysis}
+sentimentdata <- cSplit(txtx_split_merged3, "text", sep = " ", direction = "long")
+sentimenttibble <- as.data.frame(sentimentdata)
+```
+
+
+```{r changing the "text" column into "word" to be later used as a join variable for sentiment analysis}
+names(sentimenttibble) <- c("ID","Title", "WordCount", "Day", "Year_Month", "Year", "Medium", "word")
+```
+
+```{r applying "bing" library as the sentiment measure}
+sentimentbing <- sentimenttibble %>%
+inner_join(get_sentiments("bing"))
+```
+
+```{r counting and aggregating the bing sentiment count for each article}
+sentimentbingc <- sentimentbing %>% count(ID, Title, WordCount, Day, Year_Month, Year, Medium, word, sentiment, sort = FALSE)
+
+sentimentbingc$sign <- ifelse(sentimentbingc$sentiment == "positive", 1, -1)
+sentimentbingc$value <- sentimentbingc$n*sentimentbingc$sign
+bing <- as.data.frame(aggregate(value~Title+WordCount+Day+Year_Month+Year+Medium, sentimentbingc, sum))
+bing2 <- as.data.frame(aggregate(value~Year_Month+Medium, bing, sum))
+bing3 <- as.data.frame(aggregate(value~Year+Medium, bing, sum))
+```
+
+```{r applying "afinn" library as the sentiment measure}
+afinn <- sentimenttibble %>%
+inner_join(get_sentiments("afinn"))
+```
+
+```{r aggregating the afinn sentiment count for each article}
+afinn <- as.data.frame((aggregate(value~Title+WordCount+Day+Year_Month+Year+Medium, afinn, sum)))
+afinn2 <- as.data.frame(aggregate(value~Year_Month+Medium, afinn, sum))
+afinn3 <- as.data.frame(aggregate(value~Year+Medium, afinn, sum))
+```
+
+```{r plotting the bing sentiment}
+#Yearly
+dat1 <- subset(bing3, value >= 0)
+dat2 <- subset(bing3, value <0)
+ggplot() + 
+    geom_bar(data = dat1, aes(x=Year, y=value, fill=Medium),stat = "identity") +
+    geom_bar(data = dat2, aes(x=Year, y=value, fill=Medium),stat = "identity") +
+    scale_fill_hue ()
+    theme_bw() +
+    theme(panel.border = element_blank())
+
+#Monthly    
+dat3 <- subset(bing2, value >= 0)
+dat4 <- subset(bing2, value <0)
+ggplot() + 
+    geom_bar(data = dat3, aes(x=Year_Month, y=value, fill=Medium),stat = "identity") +
+    geom_bar(data = dat4, aes(x=Year_Month, y=value, fill=Medium),stat = "identity") +
+    scale_fill_hue () +
+    theme_bw() +
+    theme(panel.border = element_blank())
+```
+
+```{r plotting the afinn sentimet}
+#Yearly
+dat5 <- subset(afinn3, value >= 0)
+dat6 <- subset(afinn3, value <0)
+ggplot() + 
+    geom_bar(data = dat5, aes(x=Year, y=value, fill=Medium),stat = "identity") +
+    geom_bar(data = dat6, aes(x=Year, y=value, fill=Medium),stat = "identity") +
+    scale_fill_hue () +
+    theme_bw() +
+    theme(panel.border = element_blank())
+
+#Monthly
+dat7 <- subset(bing2, value >= 0)
+dat8 <- subset(bing2, value <0)
+ggplot() + 
+    geom_bar(data = dat3, aes(x=Year_Month, y=value, fill=Medium),stat = "identity") +
+    geom_bar(data = dat4, aes(x=Year_Month, y=value, fill=Medium),stat = "identity") +
+    scale_fill_hue () +
+    theme_bw() +
+    theme(panel.border = element_blank())
+```
+
+# Topic Modelling
+
+We begin by converting the tokenised corpusn into an 'stm' object, from which we will then extract the documents, document metada, and vocabulary (a character vector containing all the words).
+```{r preparation of data for stm}
+
+dtm_stm <- convert(tok_dfm, to = "stm")
+documents_stm <- dtm_stm$documents
+meta_stm <- dtm_stm$meta
+vocab_stm <- dtm_stm$vocab
+
+```
+
+Next, we estimate a model for 25 topics using the stm function, expressing topical prevalence as a function of the medium and the day/month/year of the publishing of the article. We also ensured that the covariates were either factor or continuous variables. Otherwise the estimate will produce irrelevant results.  
+
+We also identified the ideal number of topics using K=0, which  we will use to validate our analysis by i) confirming that our 25-topic model estimated similar topics and that topical prevalence for the topics we are interested in is comparable between our 25-topic model and the algorithm-determined n-topic model.  
+
+Upon a closer inspectiomn of those and the associated articles, we got a much more accurate topical representation of the corpus.
+
+The inspection of the relevance of the topics vis-a-vis the articles was done using the findQuotes function.  
+
+```{r estimating the stm model for 20 topics}
+
+dtm_stm_prevalence_date_medium <- stm(documents = dtm_stm$documents, vocab = dtm_stm$vocab,
+                                      K = 0, prevalence =~medium + s(date),
+                                      max.em.its = 500, data = dtm_stm$meta, init.type = "Spectral",
+                                      seed = 924106)
+summary(dtm_stm_prevalence_date_medium)
+
+dtm_stm_prevalence_date_medium2 <- stm(documents = dtm_stm$documents, vocab = dtm_stm$vocab,
+                                      K = 25, prevalence =~medium + s(date),
+                                      max.em.its = 500, data = dtm_stm$meta, init.type = "Spectral",
+                                      seed = 3357247)
+summary(dtm_stm_prevalence_date_medium2)
+
+```
+
+We then inspect the topics.
+
+```{r identifying and naming the topics}
+plot(dtm_stm_prevalence_date_medium2, type = "summary")
+summary(dtm_stm_prevalence_date_medium2)
+```
+
+Following the estimation of the stm model, we proceed to utilise the main function of the stm package, which is observing the interaction between the topic and the metadata. To do so, we use the 'estimateEffect' function.
+
+We also convert the 'medium' covariate into a factor variable as stipulated above. The 'date' covariate does not require any additional treatment, as it was already converted into a numerical variable using the as.POSIXct function at an earlier stage.
+
+```{r executing the estimateEffect function}
+dtm_stm$meta$medium <- as.factor(dtm_stm$meta$medium)
+dtm_stm$meta$date <- as.integer(dtm_stm$meta$date)
+dtm_stm_prep_date_medium <- estimateEffect(1:119 ~ medium + s(date), dtm_stm_prevalence_date_medium,
+                                           meta = dtm_stm$meta)
+
+dtm_stm_prep_date_medium2 <- estimateEffect(1:25 ~ medium + s(date), dtm_stm_prevalence_date_medium2,
+                                           meta = dtm_stm$meta)
+```
+
+We then inspect the results and draw preliminary conclusions about the validity of the data. 
+
+```{r summary of the estimate effect outcome}
+
+#summary(dtm_stm_prep_date_medium)
+#summary(dtm_stm_prep_date_medium2)
+
+```
+
+Lastly, we plot several graphs that should inform us about the (non)confirmation of our hypothesis. 
+
+```{r plotting the results}
+plot(dtm_stm_prep_date_medium, "date", method = "continuous", topics = 1:119,
+     model = z, printlegend = FALSE, xaxt = "n", xlab = "2010-2019")
+axis(1,at = meta_stm$date, labels = meta_stm$year_month, tck = 0)
+
+
+plot(dtm_stm_prep_date_medium2, "date", method = "continuous", topics = c(16, 22, 11), 
+     custom.labels = c("Paris", "Protest", "Disaster"),
+     model = z, printlegend = FALSE, xaxt = "n", xlab = "2010-2019", main = "Pertinent topics",
+     sub = "Protest, Distaster, and Paris Agreement topics")
+axis(1,at = meta_stm$date, labels = meta_stm$year_month, tck = 0)
+
+
+
+date2convert <- as.Date.POSIXct(meta_stm$date)
+date2convert
+monthseq <- 
+monthnames <- months(monthseq)
+axis(1,at = date2convert,
+     labels = monthnames)
+
+```
+
+### Annex
+
+In the annex, we collected the code used in the process that is not essential to the final calculation.
+
+# Identification of Context
+
+To check the quality of our data, we investigated the context of "suspicious" tokens:
+
+```{r kwic "document", echo = FALSE}
+kw_doc <- kwic(toks_comp, pattern =  'Document', ignore.case = FALSE)
+head(kw_doc, 10)
+write.csv(kw_doc, file = "kw_doc.csv")
+```
+
+```{r kwic "limited", echo = FALSE}
+kw_limited <- kwic(toks_comp, pattern =  'limited')
+head(kw_limited, 10)
+write.csv(kw_limited, file = "kw_limited.csv")
+```
+
+```{r kwic "www", echo = FALSE}
+kw_www <- kwic(toks_comp, pattern =  'www')
+head(kw_www, 10)
+write.csv(kw_www, file = "kw_www.csv")
+```
+
+```{r kwic "status", echo = FALSE}
+kw_status <- kwic(toks_comp, pattern =  'status')
+head(kw_status, 10)
+write.csv(kw_status, file = "kw_status.csv")
+```
+
+```{r kwic "kingdom", echo = FALSE}
+kw_kingdom <- kwic(toks_comp, pattern =  'Ireland')
+head(kw_kingdom, 10)
+```
+
+```{r kwic "climate", echo = FALSE}
+kw_climate <- kwic(toks_comp, pattern =  'climate')
+head(kw_climate, 100)
+```
+
+```{r kwic "green", echo = FALSE}
+kw_green <- kwic(toks_comp, pattern =  'green')
+head(kw_green, 100)
+```
+
+# Identification of Collocations
+
+We looked for collocations with four words:
+
+```{r identify collocations(4), echo = FALSE}
+toks_4 <- textstat_collocations(toks, size = 4, min_count = 5, tolower = TRUE)
+head(toks_4, 100)
+```
+
+We looked for collocations with three words:
+
+```{r identify collocations(3), echo = FALSE}
+toks_3 <- textstat_collocations(toks, size = 3, min_count = 10, tolower = TRUE)
+head(toks_3, 100)
+```
+
+We looked for collocations with two words:
+
+```{r identify collocations(2), echo = FALSE}
+toks_2 <- textstat_collocations(toks, size = 2, min_count = 10, tolower = TRUE)
+head(toks_2, 100)
+```
+
+By looking at capital letters, we could identify names as collocations:
+
+```{r identify names, echo = FALSE}
+toks_cap <- tokens_select(toks_comp, pattern = '^[A-Z]',
+                               valuetype = 'regex',
+                               case_insensitive = FALSE, 
+                               padding = TRUE)
+toks_cap <- textstat_collocations(toks_cap, min_count = 15, tolower = FALSE)
+head(toks_cap, 100)
+```
+
+As the term "climate" appeared in many different contexts, we checked for "climate"-collocations seperately (and did the same with other terms):
+
+```{r identify "climate" collocations, echo = FALSE}
+toks_climate <- tokens_select(toks_comp, pattern = "climate", selection =                       c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_climate <- textstat_collocations(toks_climate, size = 2, min_count = 10,                    tolower = FALSE)
+head(toks_climate, 100)
+```
+
+```{r identify "people" collocations, echo = FALSE}
+toks_people <- tokens_select(toks_comp, pattern = "people", selection = c("keep"),             case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_people <- textstat_collocations(toks_people, min_count = 10, tolower = FALSE)
+head(toks_people, 100)
+```
+
+```{r identify "government" collocations, echo = FALSE}
+toks_govern <- tokens_select(toks_comp, pattern = "government", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_govern <- textstat_collocations(toks_govern, min_count = 10, tolower = FALSE)
+head(toks_govern, 100)
+```
+
+```{r identify "energy" collocations, echo = FALSE}
+toks_energy <- tokens_select(toks_comp, pattern = "energy*", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_energy <- textstat_collocations(toks_energy, min_count = 8, tolower =                FALSE)
+head(toks_energy, 100)
+```
+
+```{r identify "emissions" collocations, echo = FALSE}
+toks_emission <- tokens_select(toks_comp, pattern = "emission*", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_emission <- textstat_collocations(toks_emission, min_count = 3, tolower =                FALSE)
+head(toks_emission, 100)
+```
+
+```{r identify "climate change" collocations, echo = FALSE}
+toks_CC <- tokens_select(toks_comp, pattern = "climate_change", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_CC <- textstat_collocations(toks_CC, min_count = 8, tolower =                            FALSE)
+head(toks_CC, 100)
+```
+
+```{r identify "carbon" collocations, echo = FALSE}
+toks_carbon <- tokens_select(toks_comp, pattern = "carbon", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_carbon <- textstat_collocations(toks_carbon, min_count = 8, tolower =                            FALSE)
+head(toks_carbon, 100)
+```
+
+```{r identify "environment" collocations, echo = FALSE}
+toks_environ <- tokens_select(toks_comp, pattern = "environment*", selection =                   c("keep"), case_insensitive = TRUE, padding = TRUE, window = 1)
+toks_environ <- textstat_collocations(toks_environ, min_count = 8, tolower =                            FALSE)
+head(toks_environ, 100)
+```
+
+
+# Stemming
+
+As a comparison, we also tried out stemming. Stemming reduces the tokens to their word-stems.
+
+```{r frequent tokens stemmed}
+tok_stem_dfm <- dfm(toks_comp, stem = TRUE, tolower = TRUE)
+tok_stem_dfm <- dfm_trim(tok_stem_dfm, min_docfreq = 10, docfreq_type = c("count"))
+textstat_stem <- textstat_frequency(tok_stem_dfm)
+textstat_stem
+```
+
+
+```{r weighted frequency stemmed}
+tok_stem_tfidf <- dfm_tfidf(tok_stem_dfm)
+textstat_stem_weight <- textstat_frequency(tok_stem_tfidf, force = TRUE)
+textstat_stem_weight
+```
+
